@@ -1,0 +1,823 @@
+-- صيد الضبان | المطور عمر الهزيمي
+-- Dhab head marker/hitbox + intro
+local Players = game:GetService("Players")
+local UIS = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local CoreGui = game:GetService("CoreGui")
+local player = Players.LocalPlayer
+
+local SIZE, COLOR, TRANSP = 60, Color3.fromRGB(255, 0, 0), 0.5
+if getgenv and getgenv().DhabHB2 then pcall(getgenv().DhabHB2) end
+
+local enabled, running = true, true
+local flip = false
+local selIdx = 1     -- which body part carries the hitbox (1 = front-most part)
+local up = 0.0       -- fraction of body height above the selected part
+local models, marks = {}, {}
+
+-- ============================================================
+-- INTRO: صيد الضبان  +  المطور عمر الهزيمي
+-- ============================================================
+local introGui
+
+local function getParent()
+	local ok, r = pcall(function() return gethui and gethui() end)
+	if ok and r then return r end
+	local ok2 = pcall(function()
+		local f = Instance.new("Folder"); f.Parent = CoreGui; f:Destroy()
+	end)
+	if ok2 then return CoreGui end
+	return player:WaitForChild("PlayerGui")
+end
+
+local function create(class, props, children)
+	local i = Instance.new(class)
+	for k, v in pairs(props or {}) do i[k] = v end
+	for _, c in ipairs(children or {}) do c.Parent = i end
+	return i
+end
+local function corner(r) return create("UICorner", { CornerRadius = UDim.new(0, r or 8) }) end
+local function stroke(c, t)
+	return create("UIStroke", { Color = c, Thickness = t or 1.2, ApplyStrokeMode = Enum.ApplyStrokeMode.Border })
+end
+
+local function runIntro()
+	introGui = create("ScreenGui", {
+		Name = "DhabIntro", ResetOnSpawn = false, IgnoreGuiInset = true,
+		ZIndexBehavior = Enum.ZIndexBehavior.Sibling, DisplayOrder = 1000,
+	})
+	introGui.Parent = getParent()
+
+	local vp = workspace.CurrentCamera.ViewportSize
+	local W, H = math.max(vp.X, 480), math.max(vp.Y, 270)
+	local horizon = H * 0.60
+	local gH = H - horizon
+	local conns = {}
+	local skip = false
+	local progress = 0
+
+	local root = create("CanvasGroup", {
+		Name = "Intro", Parent = introGui, Size = UDim2.new(1, 0, 1, 0),
+		BackgroundColor3 = Color3.new(1, 1, 1), BorderSizePixel = 0, ZIndex = 500,
+		Active = true, GroupTransparency = 1,
+	})
+	local bgGrad = create("UIGradient", {
+		Parent = root, Rotation = 90,
+		Color = ColorSequence.new({
+			ColorSequenceKeypoint.new(0, Color3.fromRGB(16, 12, 52)),
+			ColorSequenceKeypoint.new(0.55, Color3.fromRGB(96, 28, 124)),
+			ColorSequenceKeypoint.new(1, Color3.fromRGB(10, 8, 26)),
+		}),
+	})
+
+	-- retro sun
+	local sunSize = math.min(W, H) * 0.64
+	local sunCy = horizon - sunSize * 0.30
+
+	local rays = {}
+	for i = 1, 9 do
+		local ray = create("Frame", {
+			Parent = root, AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 0, sunCy),
+			Size = UDim2.new(0, math.random(10, 26), 0, math.max(W, H) * 1.1), Rotation = (i - 1) * 40,
+			BackgroundColor3 = Color3.fromRGB(255, 190, 120), BackgroundTransparency = 0.05, BorderSizePixel = 0, ZIndex = 1,
+		}, { create("UIGradient", { Rotation = 90, Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(1, 0.55),
+		}) }) })
+		rays[i] = { f = ray, base = (i - 1) * 40, spd = 4 + (i % 3) * 2 }
+	end
+	for i = 1, 7 do
+		local sz = sunSize * (1.05 + i * 0.16)
+		create("Frame", {
+			Parent = root, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0, sunCy),
+			Size = UDim2.new(0, sz, 0, sz), BackgroundColor3 = Color3.fromRGB(255, 120, 190),
+			BackgroundTransparency = 0.8 + i * 0.025, BorderSizePixel = 0, ZIndex = 1,
+		}, { create("UICorner", { CornerRadius = UDim.new(1, 0) }) })
+	end
+	create("Frame", {
+		Parent = root, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0, sunCy),
+		Size = UDim2.new(0, sunSize, 0, sunSize), BackgroundColor3 = Color3.new(1, 1, 1),
+		BorderSizePixel = 0, ZIndex = 2,
+	}, {
+		create("UICorner", { CornerRadius = UDim.new(1, 0) }),
+		create("UIGradient", { Rotation = 90, Color = ColorSequence.new(Color3.fromRGB(255, 215, 80), Color3.fromRGB(255, 40, 140)) }),
+	})
+	do
+		local r = sunSize / 2
+		local bars = { { 0.05, 0.008 }, { 0.11, 0.014 }, { 0.17, 0.02 }, { 0.23, 0.028 }, { 0.28, 0.036 } }
+		for _, b in ipairs(bars) do
+			local dy = b[1] * sunSize
+			local chord = 2 * math.sqrt(math.max(r * r - dy * dy, 1))
+			create("Frame", {
+				Parent = root, AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = UDim2.new(0.5, 0, 0, sunCy + dy),
+				Size = UDim2.new(0, chord, 0, math.max(2, b[2] * sunSize)),
+				BackgroundColor3 = Color3.fromRGB(40, 9, 60), BorderSizePixel = 0, ZIndex = 3,
+			})
+		end
+	end
+
+	-- ground + perspective grid
+	local ground = create("Frame", {
+		Parent = root, Position = UDim2.new(0, 0, 0, horizon), Size = UDim2.new(1, 0, 0, gH + 2),
+		BackgroundColor3 = Color3.new(1, 1, 1), BorderSizePixel = 0, ZIndex = 4, ClipsDescendants = true,
+	}, { create("UIGradient", { Rotation = 90, Color = ColorSequence.new(Color3.fromRGB(70, 12, 100), Color3.fromRGB(5, 3, 12)) }) })
+
+	local hLines = {}
+	for i = 1, 11 do
+		hLines[i] = create("Frame", {
+			Parent = ground, Size = UDim2.new(1, 0, 0, 2), BackgroundColor3 = Color3.fromRGB(0, 230, 255),
+			BorderSizePixel = 0, ZIndex = 5,
+		})
+	end
+	for j = -9, 9 do
+		local dx = j * W * 0.10
+		local len = math.sqrt(dx * dx + gH * gH)
+		create("Frame", {
+			Parent = ground, AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.new(0, W / 2 + dx / 2, 0, gH / 2), Size = UDim2.new(0, 2, 0, len),
+			Rotation = -math.deg(math.atan2(dx, gH)), BackgroundColor3 = Color3.fromRGB(255, 60, 200),
+			BackgroundTransparency = 0.4, BorderSizePixel = 0, ZIndex = 5,
+		})
+	end
+	create("Frame", {
+		Parent = root, Position = UDim2.new(0, 0, 0, horizon - 1), Size = UDim2.new(1, 0, 0, 3),
+		BackgroundColor3 = Color3.fromRGB(0, 240, 255), BorderSizePixel = 0, ZIndex = 6,
+	}, { create("UIGradient", { Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.5, 0), NumberSequenceKeypoint.new(1, 1),
+	}) }) })
+
+	create("Frame", {
+		Parent = root, AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 0, 0, horizon),
+		Size = UDim2.new(1, 0, 0, H * 0.22), BackgroundColor3 = Color3.fromRGB(255, 80, 180),
+		BorderSizePixel = 0, ZIndex = 3,
+	}, { create("UIGradient", { Rotation = 90, Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(1, 0.55),
+	}) }) })
+
+	local sweep = create("Frame", {
+		Parent = root, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0, -200, 0.5, 0),
+		Size = UDim2.new(0, W * 0.16, 0, H * 1.8), Rotation = 18, BackgroundColor3 = Color3.new(1, 1, 1),
+		BorderSizePixel = 0, ZIndex = 8,
+	}, { create("UIGradient", { Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.5, 0.84), NumberSequenceKeypoint.new(1, 1),
+	}) }) })
+
+	-- speed lines
+	local lines = {}
+	local palette = {
+		Color3.fromRGB(0, 230, 255), Color3.fromRGB(255, 60, 200),
+		Color3.fromRGB(255, 255, 255), Color3.fromRGB(255, 170, 60),
+	}
+	for i = 1, 26 do
+		local len = math.random(70, 280)
+		local x, y = math.random(-300, math.floor(W)), math.random(0, math.floor(H))
+		local f = create("Frame", {
+			Parent = root, Size = UDim2.new(0, len, 0, math.random(1, 3)), Position = UDim2.new(0, x, 0, y),
+			BackgroundColor3 = palette[math.random(#palette)], BackgroundTransparency = 0.4 + math.random() * 0.45,
+			BorderSizePixel = 0, ZIndex = 7,
+		})
+		lines[i] = { f = f, x = x, y = y, len = len, speed = math.random(500, 1700) }
+	end
+
+	-- ===== TITLE: صيد الضبان =====
+	local titleSize = math.clamp(math.floor(W / 11), 40, 100)
+	local titleY = H * 0.25
+	local titleGlow = create("Frame", {
+		Parent = root, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0, titleY),
+		Size = UDim2.new(0, titleSize * 5, 0, titleSize * 1.5), BackgroundTransparency = 1, ZIndex = 19,
+	})
+	for i = 1, 6 do
+		create("Frame", {
+			Parent = titleGlow, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.5, 0),
+			Size = UDim2.new(1 + i * 0.12, 0, 1 + i * 0.22, 0), BackgroundColor3 = Color3.fromRGB(0, 200, 255),
+			BackgroundTransparency = 0.78 + i * 0.03, BorderSizePixel = 0, ZIndex = 19,
+		}, { create("UICorner", { CornerRadius = UDim.new(1, 0) }) })
+	end
+	local title = create("TextLabel", {
+		Parent = root, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0, titleY),
+		Size = UDim2.new(0, W, 0, titleSize * 1.3), BackgroundTransparency = 1,
+		Text = "صيد الضبان", TextColor3 = Color3.new(1, 1, 1),
+		Font = Enum.Font.GothamBlack, TextSize = titleSize * 1.7, TextTransparency = 1, ZIndex = 21,
+	}, {
+		create("UIStroke", { Color = Color3.fromRGB(0, 230, 255), Thickness = 3, Transparency = 1 }),
+		create("UIGradient", { Rotation = 90, Color = ColorSequence.new(Color3.new(1, 1, 1), Color3.fromRGB(150, 200, 255)) }),
+	})
+	-- small developer credit under the title
+	local subtitle = create("TextLabel", {
+		Parent = root, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0, titleY + titleSize * 0.85),
+		Size = UDim2.new(0, W, 0, 22), BackgroundTransparency = 1, TextTransparency = 1,
+		Text = "المطور عمر الهزيمي", TextColor3 = Color3.fromRGB(255, 120, 210),
+		Font = Enum.Font.GothamBold, TextSize = math.clamp(math.floor(W / 70), 11, 16), ZIndex = 21,
+	})
+
+	-- skip button
+	local skipBtn = create("TextButton", {
+		Parent = root, Size = UDim2.new(0, 84, 0, 28), Position = UDim2.new(1, -96, 0, 14),
+		BackgroundColor3 = Color3.fromRGB(20, 16, 40), Text = "SKIP ▶", TextColor3 = Color3.fromRGB(190, 190, 220),
+		Font = Enum.Font.GothamBold, TextSize = 12, ZIndex = 300, Visible = false,
+	}, { corner(14), stroke(Color3.fromRGB(120, 100, 200), 1.2) })
+	table.insert(conns, skipBtn.MouseButton1Click:Connect(function() skip = true end))
+
+	-- loading group
+	local loadG = create("CanvasGroup", {
+		Parent = root, Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, ZIndex = 30,
+	})
+	local barW = math.min(W * 0.72, 600)
+	local barY = H * 0.84
+	local stageLabel = create("TextLabel", {
+		Parent = loadG, AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0.5, -barW / 2, 0, barY - 52),
+		Size = UDim2.new(0, barW * 0.7, 0, 18), BackgroundTransparency = 1, Text = "جاري التحميل...",
+		TextColor3 = Color3.fromRGB(210, 220, 255), Font = Enum.Font.GothamBold, TextSize = 13,
+		TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 31,
+	})
+	local pctLabel = create("TextLabel", {
+		Parent = loadG, AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(0.5, barW / 2, 0, barY - 52),
+		Size = UDim2.new(0, 90, 0, 18), BackgroundTransparency = 1, Text = "0%",
+		TextColor3 = Color3.fromRGB(0, 240, 255), Font = Enum.Font.GothamBlack, TextSize = 15,
+		TextXAlignment = Enum.TextXAlignment.Right, ZIndex = 31,
+	})
+	local eqHolder = create("Frame", {
+		Parent = loadG, AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 0, barY - 8),
+		Size = UDim2.new(0, barW, 0, 44), BackgroundTransparency = 1, ZIndex = 31,
+	})
+	local eq, EQN = {}, 44
+	local eqW = barW / EQN
+	for i = 1, EQN do
+		eq[i] = create("Frame", {
+			Parent = eqHolder, AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, (i - 1) * eqW, 1, 0),
+			Size = UDim2.new(0, math.max(eqW - 2, 1), 0, 3), BackgroundColor3 = Color3.fromRGB(0, 230, 255),
+			BorderSizePixel = 0, ZIndex = 31,
+		})
+	end
+	local barGlow = create("Frame", {
+		Parent = loadG, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0, barY + 8),
+		Size = UDim2.new(0, barW + 40, 0, 46), BackgroundColor3 = Color3.fromRGB(0, 220, 255),
+		BackgroundTransparency = 0.85, BorderSizePixel = 0, ZIndex = 30,
+	}, { create("UICorner", { CornerRadius = UDim.new(1, 0) }) })
+	local barBgF = create("Frame", {
+		Parent = loadG, AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, barY),
+		Size = UDim2.new(0, barW, 0, 16), BackgroundColor3 = Color3.fromRGB(14, 12, 30),
+		BorderSizePixel = 0, ZIndex = 31,
+	}, { create("UICorner", { CornerRadius = UDim.new(1, 0) }), stroke(Color3.fromRGB(0, 200, 255), 1.5) })
+	local fill = create("Frame", {
+		Parent = barBgF, Size = UDim2.new(0, 0, 1, 0), BackgroundColor3 = Color3.new(1, 1, 1),
+		BorderSizePixel = 0, ZIndex = 32,
+	}, {
+		create("UICorner", { CornerRadius = UDim.new(1, 0) }),
+		create("UIGradient", { Color = ColorSequence.new({
+			ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 230, 255)),
+			ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 60, 200)),
+			ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 170, 60)),
+		}) }),
+	})
+	local head = create("Frame", {
+		Parent = barBgF, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0, 0, 0.5, 0),
+		Size = UDim2.new(0, 8, 0, 26), BackgroundColor3 = Color3.new(1, 1, 1), BorderSizePixel = 0, ZIndex = 33,
+	}, { create("UICorner", { CornerRadius = UDim.new(1, 0) }) })
+	local tipLabel = create("TextLabel", {
+		Parent = loadG, AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, barY + 30),
+		Size = UDim2.new(0, barW, 0, 18), BackgroundTransparency = 1, Text = "",
+		TextColor3 = Color3.fromRGB(150, 150, 190), Font = Enum.Font.Gotham, TextSize = 12, ZIndex = 31,
+	})
+	local tips = {
+		"نصيحة: اضغط H لتشغيل / إيقاف الهيتبوكس",
+		"نصيحة: ◀ ▶ PART يغيّر الجزء الذي عليه الهيتبوكس ويكتب اسمه",
+		"نصيحة: زر FLIP يقلب اتجاه الرأس",
+		"نصيحة: اضغط M لفتح قائمة السرعة، والأسهم تحرك السيارة بسرعة 300",
+	}
+
+	local flash = create("Frame", {
+		Parent = root, Size = UDim2.new(1, 0, 1, 0), BackgroundColor3 = Color3.new(1, 1, 1),
+		BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 400, Active = false,
+	})
+
+	-- animation loop
+	local t0 = os.clock()
+	local phase = 0
+	local tipIdx, tipT = 1, 0
+	tipLabel.Text = tips[1]
+	table.insert(conns, RunService.RenderStepped:Connect(function(dt)
+		phase += dt * 0.35
+		local tt = os.clock() - t0
+		for _, l in ipairs(lines) do
+			l.x += l.speed * dt
+			if l.x > W then
+				l.x = -l.len
+				l.y = math.random(0, math.floor(H))
+			end
+			l.f.Position = UDim2.new(0, l.x, 0, l.y)
+		end
+		for i, h in ipairs(hLines) do
+			local t = (((i - 1) / #hLines) + phase) % 1
+			h.Position = UDim2.new(0, 0, 0, gH * (t ^ 2.3))
+			h.Size = UDim2.new(1, 0, 0, 1 + t * 3)
+			h.BackgroundTransparency = 1 - (0.12 + 0.88 * t)
+		end
+		bgGrad.Rotation = 90 + math.sin(tt * 0.5) * 8
+		for _, r in ipairs(rays) do
+			r.f.Rotation = r.base + tt * r.spd
+			r.f.BackgroundTransparency = 0.05 + 0.1 * math.sin(tt * 1.5 + r.base)
+		end
+		sweep.Position = UDim2.new(0, ((tt * 0.32) % 1.5 - 0.25) * W, 0.5, 0)
+		barGlow.BackgroundTransparency = 0.84 + 0.07 * math.sin(tt * 4)
+		if tt > 1.5 then
+			local st = title:FindFirstChildOfClass("UIStroke")
+			if st then st.Thickness = 3 + math.sin(tt * 3) * 1.3 end
+		end
+		fill.Size = UDim2.new(progress, 0, 1, 0)
+		head.Position = UDim2.new(progress, 0, 0.5, 0)
+		pctLabel.Text = string.format("%d%%", math.floor(progress * 100 + 0.5))
+		local amp = 12 + progress * 30
+		for i, b in ipairs(eq) do
+			local active = (i / EQN) <= progress + 0.02
+			local a = 0.25 + 0.75 * math.abs(math.sin(tt * (3 + progress * 7) + i * 0.55))
+			b.Size = UDim2.new(0, math.max(eqW - 2, 1), 0, active and math.max(3, amp * a) or 3)
+			b.BackgroundColor3 = active and Color3.fromHSV(0.5 + (i / EQN) * 0.35, 0.8, 1) or Color3.fromRGB(40, 40, 70)
+		end
+		tipT += dt
+		if tipT > 2.2 then
+			tipT = 0
+			tipIdx = tipIdx % #tips + 1
+			tipLabel.Text = tips[tipIdx]
+		end
+		if tt > 1.2 then skipBtn.Visible = true end
+	end))
+
+	-- ===== sequence =====
+	TweenService:Create(root, TweenInfo.new(0.5), { GroupTransparency = 0 }):Play()
+	task.wait(0.4)
+	TweenService:Create(title, TweenInfo.new(0.6, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+		TextTransparency = 0, TextSize = titleSize,
+	}):Play()
+	TweenService:Create(title:FindFirstChildOfClass("UIStroke"), TweenInfo.new(0.6), { Transparency = 0.15 }):Play()
+	task.wait(0.5)
+	TweenService:Create(subtitle, TweenInfo.new(0.6), { TextTransparency = 0 }):Play()
+
+	local steps = {
+		{ 0.15, "جاري التحميل..." }, { 0.35, "البحث عن الضبان..." },
+		{ 0.55, "تجهيز الهيتبوكس..." }, { 0.78, "ضبط الواجهة..." },
+		{ 0.95, "تشغيل السكربت..." }, { 1.00, "جاهز" },
+	}
+	for _, st in ipairs(steps) do
+		stageLabel.Text = st[2]
+		local from = progress
+		local dur = 0.35 + math.random() * 0.5
+		local s0 = os.clock()
+		while true do
+			if skip then progress = st[1] break end
+			local a = math.clamp((os.clock() - s0) / dur, 0, 1)
+			progress = from + (st[1] - from) * (a * a * (3 - 2 * a))
+			if a >= 1 then break end
+			RunService.Heartbeat:Wait()
+		end
+		if skip then task.wait(0.04) end
+	end
+	task.wait(0.4)
+
+	-- outro
+	TweenService:Create(flash, TweenInfo.new(0.1), { BackgroundTransparency = 0.5 }):Play()
+	task.wait(0.1)
+	TweenService:Create(root, TweenInfo.new(0.55), { GroupTransparency = 1 }):Play()
+	task.wait(0.6)
+	for _, c in ipairs(conns) do pcall(function() c:Disconnect() end) end
+	introGui:Destroy()
+	introGui = nil
+end
+
+task.spawn(function()
+	local ok, err = pcall(runIntro)
+	if not ok then
+		warn("Intro error: " .. tostring(err))
+		if introGui then pcall(function() introGui:Destroy() end) introGui = nil end
+	end
+end)
+
+-- ============================================================
+-- MAIN SCRIPT (hitbox)
+-- ============================================================
+local function isDhab(n) return string.match(string.lower(n), "^dhab_%w+$") ~= nil end
+local function nested(d)
+	local p = d.Parent
+	while p and p ~= workspace do
+		if p:IsA("Model") and isDhab(p.Name) then return true end
+		p = p.Parent
+	end
+	return false
+end
+local function register(d)
+	if d:IsA("Model") and isDhab(d.Name) and not nested(d)
+		and not (player.Character and d:IsDescendantOf(player.Character)) then
+		models[d] = true
+	end
+end
+
+local function rootPart(m)
+	if m.PrimaryPart then return m.PrimaryPart end
+	local best, bv = nil, -1
+	for _, p in ipairs(m:GetDescendants()) do
+		if p:IsA("BasePart") then
+			local v = p.Size.X * p.Size.Y * p.Size.Z
+			if v > bv then best, bv = p, v end
+		end
+	end
+	return best
+end
+
+-- all parts of the dhab ordered from the front tip to the back
+local function sortedParts(m)
+	local cf, size = m:GetBoundingBox()
+	local axis
+	if size.X > size.Z then axis = cf.RightVector else axis = cf.LookVector end
+	local dir = axis * (flip and -1 or 1)
+	local list = {}
+	for _, p in ipairs(m:GetDescendants()) do
+		if p:IsA("BasePart") and p.Name ~= "HeadHB" then
+			table.insert(list, { part = p, k = (p.Position - cf.Position):Dot(dir) })
+		end
+	end
+	table.sort(list, function(a, b) return a.k > b.k end)
+	local out = {}
+	for i, e in ipairs(list) do out[i] = e.part end
+	return out, size
+end
+
+local function clearMark(m)
+	local mk = marks[m]
+	if mk then mk.part:Destroy() marks[m] = nil end
+end
+local function clearAll() for m in pairs(marks) do clearMark(m) end end
+
+local function build(m)
+	clearMark(m)
+	local parts, size = sortedParts(m)
+	if #parts == 0 then return end
+	local idx = math.clamp(selIdx, 1, #parts)
+	local target = parts[idx]
+	local p = Instance.new("Part")
+	p.Name = "HeadHB"
+	p.Size = Vector3.new(SIZE, SIZE, SIZE)
+	p.Color, p.Transparency = COLOR, TRANSP
+	p.Material = Enum.Material.SmoothPlastic
+	p.CanCollide, p.Massless = false, true
+	p.CanQuery, p.CanTouch = true, true
+	p.Anchored = true
+	-- offset stored relative to the selected part, re-applied every frame so it follows movement
+	local pos = target.Position + Vector3.new(0, size.Y * up, 0)
+	local off = CFrame.new(target.CFrame:PointToObjectSpace(pos))
+	p.CFrame = target.CFrame * off
+	-- outline the real body part the hitbox is attached to
+	local hl = Instance.new("Highlight")
+	hl.Adornee = target
+	hl.FillTransparency = 1
+	hl.OutlineColor = Color3.fromRGB(255, 230, 0)
+	hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+	hl.Parent = p
+	p.Parent = m
+	marks[m] = { part = p, root = target, off = off, name = target.Name, idx = idx, count = #parts }
+end
+
+local function rebuildAll()
+	clearAll()
+	if not enabled then return end
+	for m in pairs(models) do if m.Parent then build(m) end end
+end
+
+-- tracking
+task.spawn(function()
+	local n = 0
+	for _, d in ipairs(workspace:GetDescendants()) do
+		n += 1
+		if n % 2000 == 0 then task.wait() end
+		register(d)
+	end
+end)
+local addC = workspace.DescendantAdded:Connect(function(d)
+	if d:IsA("Model") and isDhab(d.Name) then
+		task.delay(0.8, function() if d.Parent then register(d) end end)
+	end
+end)
+local remC = workspace.DescendantRemoving:Connect(function(d)
+	models[d] = nil
+	if marks[d] then clearMark(d) end
+end)
+
+-- follow: keep every hitbox glued to its dhab every frame
+local followC = RunService.RenderStepped:Connect(function()
+	if not enabled then return end
+	for _, mk in pairs(marks) do
+		if mk.root.Parent then mk.part.CFrame = mk.root.CFrame * mk.off end
+	end
+end)
+
+task.spawn(function()
+	while running do
+		if enabled then
+			for m in pairs(models) do
+				if not m.Parent then models[m] = nil
+				elseif not (marks[m] and marks[m].part.Parent and marks[m].root.Parent) then build(m) end
+			end
+		end
+		task.wait(1.5)
+	end
+end)
+
+-- ============================================================
+-- UI  (hitbox panel on the left + speed drawer on the right)
+-- ============================================================
+local gui = Instance.new("ScreenGui")
+gui.Name, gui.ResetOnSpawn, gui.DisplayOrder = "DhabHB2", false, 999
+if not pcall(function() gui.Parent = (gethui and gethui()) or game:GetService("CoreGui") end) then
+	gui.Parent = player:WaitForChild("PlayerGui")
+end
+
+local C = {
+	panel = Color3.fromRGB(20, 18, 38),
+	cyan = Color3.fromRGB(0, 220, 255),
+	pink = Color3.fromRGB(255, 70, 200),
+	green = Color3.fromRGB(40, 200, 120),
+	red = Color3.fromRGB(220, 60, 80),
+	gray = Color3.fromRGB(62, 64, 105),
+	white = Color3.new(1, 1, 1),
+}
+local function tw(o, t, props)
+	TweenService:Create(o, TweenInfo.new(t, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), props):Play()
+end
+
+-- fancy button: gradient + glow stroke + hover / press animation
+local function mkBtn(parent, text, size, pos, color, textSize)
+	local b = create("TextButton", {
+		Parent = parent, Size = size, Position = pos, BackgroundColor3 = color,
+		Text = text, TextColor3 = C.white, Font = Enum.Font.GothamBlack, TextSize = textSize or 13,
+		AutoButtonColor = false, BorderSizePixel = 0,
+	}, {
+		corner(10),
+		create("UIGradient", { Rotation = 90, Color = ColorSequence.new(C.white, Color3.fromRGB(165, 165, 180)) }),
+		create("UIStroke", { Color = C.white, Transparency = 0.72, Thickness = 1.2, ApplyStrokeMode = Enum.ApplyStrokeMode.Border }),
+		create("UIScale", { Scale = 1 }),
+	})
+	local sc = b:FindFirstChildOfClass("UIScale")
+	b.MouseEnter:Connect(function() tw(sc, 0.12, { Scale = 1.06 }) end)
+	b.MouseLeave:Connect(function() tw(sc, 0.12, { Scale = 1 }) end)
+	b.MouseButton1Down:Connect(function() tw(sc, 0.07, { Scale = 0.92 }) end)
+	b.MouseButton1Up:Connect(function() tw(sc, 0.1, { Scale = 1.06 }) end)
+	return b
+end
+
+local function mkPanel(size, pos, anchor)
+	return create("Frame", {
+		Parent = gui, Size = size, Position = pos, AnchorPoint = anchor or Vector2.new(0, 0),
+		BackgroundColor3 = C.panel, BackgroundTransparency = 0.1, BorderSizePixel = 0, Active = true,
+	}, {
+		corner(16), stroke(C.cyan, 1.6),
+		create("UIGradient", { Rotation = 90, Color = ColorSequence.new(C.white, Color3.fromRGB(185, 165, 230)) }),
+	})
+end
+
+local function mkLabel(parent, text, size, pos, ts, color, font, xa)
+	return create("TextLabel", {
+		Parent = parent, Size = size, Position = pos, BackgroundTransparency = 1, Text = text,
+		TextSize = ts, TextColor3 = color or C.white, Font = font or Enum.Font.GothamBold,
+		TextXAlignment = xa or Enum.TextXAlignment.Center,
+	})
+end
+
+-- ---------------- Left panel: HITBOX ----------------
+local hbPanel = mkPanel(UDim2.fromOffset(160, 222), UDim2.new(0, 10, 0.5, -111))
+mkLabel(hbPanel, "HITBOX", UDim2.new(1, 0, 0, 24), UDim2.new(0, 0, 0, 6), 14, C.cyan, Enum.Font.GothamBlack)
+
+local BW, BH = UDim2.fromOffset(66, 32), 32
+local bHB = mkBtn(hbPanel, "HB: ON", BW, UDim2.fromOffset(10, 36), C.green)
+local bFlip = mkBtn(hbPanel, "FLIP", BW, UDim2.fromOffset(84, 36), C.gray)
+local bF1 = mkBtn(hbPanel, "◀ PART", BW, UDim2.fromOffset(10, 76), C.gray, 11)
+local bF2 = mkBtn(hbPanel, "PART ▶", BW, UDim2.fromOffset(84, 76), C.gray, 11)
+local bU1 = mkBtn(hbPanel, "UP +", BW, UDim2.fromOffset(10, 116), C.gray)
+local bU2 = mkBtn(hbPanel, "UP -", BW, UDim2.fromOffset(84, 116), C.gray)
+
+local partLbl = mkLabel(hbPanel, "PART: -", UDim2.new(1, -12, 0, 18), UDim2.new(0, 6, 0, 156), 12, Color3.fromRGB(255, 230, 0), Enum.Font.GothamBlack)
+partLbl.TextTruncate = Enum.TextTruncate.AtEnd
+local info = mkLabel(hbPanel, "", UDim2.new(1, -16, 0, 18), UDim2.new(0, 8, 0, 176), 12, C.white, Enum.Font.GothamMedium)
+mkLabel(hbPanel, "H = ON/OFF", UDim2.new(1, 0, 0, 16), UDim2.new(0, 0, 0, 198), 11, Color3.fromRGB(150, 150, 190), Enum.Font.Gotham)
+local function upd() info.Text = string.format("up %.2f  %s", up, flip and "(flipped)" or "") end
+upd()
+
+local function change() upd() rebuildAll() end
+local function toggleHB()
+	enabled = not enabled
+	bHB.Text = "HB: " .. (enabled and "ON" or "OFF")
+	tw(bHB, 0.2, { BackgroundColor3 = enabled and C.green or C.red })
+	rebuildAll()
+end
+bHB.MouseButton1Click:Connect(toggleHB)
+bFlip.MouseButton1Click:Connect(function() flip = not flip change() end)
+bF1.MouseButton1Click:Connect(function() selIdx = math.max(1, selIdx - 1) change() end)
+bF2.MouseButton1Click:Connect(function()
+	local mx = 1
+	for m in pairs(models) do
+		if m.Parent then mx = math.max(mx, #sortedParts(m)) end
+	end
+	selIdx = math.min(mx, selIdx + 1)
+	change()
+end)
+
+-- show which body part the hitbox sits on (nearest dhab)
+task.spawn(function()
+	while running do
+		local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+		local best, bd = nil, math.huge
+		for _, mk in pairs(marks) do
+			local d = hrp and (mk.root.Position - hrp.Position).Magnitude or 0
+			if d < bd then best, bd = mk, d end
+		end
+		if best then
+			partLbl.Text = string.format("PART: %s (%d/%d)", best.name, best.idx, best.count)
+		else
+			partLbl.Text = "PART: no dhab found"
+		end
+		task.wait(0.2)
+	end
+end)
+bU1.MouseButton1Click:Connect(function() up = math.clamp(up + 0.1, -1, 1.5) change() end)
+bU2.MouseButton1Click:Connect(function() up = math.clamp(up - 0.1, -1, 1.5) change() end)
+
+-- ---------------- Right drawer: SPEED + arrow pad ----------------
+local speedOn, speedVal, SPEED_DEF, SPEED_MAX, STEP = true, 300, 300, 600, 25
+local dirSign = 1
+local pad = { up = false, down = false, left = false, right = false }
+
+local DW, DH = 200, 328
+local drawer = mkPanel(UDim2.fromOffset(DW, DH), UDim2.new(1, 6, 0.5, 0), Vector2.new(0, 0.5))
+drawer.Name = "SpeedDrawer"
+mkLabel(drawer, "🚗 SPEED", UDim2.new(1, 0, 0, 24), UDim2.new(0, 0, 0, 8), 15, C.pink, Enum.Font.GothamBlack)
+local valLbl = mkLabel(drawer, tostring(speedVal), UDim2.new(1, 0, 0, 46), UDim2.new(0, 0, 0, 32), 40, C.cyan, Enum.Font.GothamBlack)
+local bDown = mkBtn(drawer, "−", UDim2.fromOffset(36, 36), UDim2.fromOffset(14, 37), C.gray, 22)
+local bUp = mkBtn(drawer, "+", UDim2.fromOffset(36, 36), UDim2.fromOffset(150, 37), C.gray, 22)
+mkLabel(drawer, "studs / s", UDim2.new(1, 0, 0, 14), UDim2.new(0, 0, 0, 78), 11, Color3.fromRGB(150, 150, 190), Enum.Font.Gotham)
+
+local barBg = create("Frame", {
+	Parent = drawer, Size = UDim2.new(1, -28, 0, 8), Position = UDim2.fromOffset(14, 98),
+	BackgroundColor3 = Color3.fromRGB(10, 9, 22), BorderSizePixel = 0,
+}, { create("UICorner", { CornerRadius = UDim.new(1, 0) }) })
+local barFill = create("Frame", {
+	Parent = barBg, Size = UDim2.new(speedVal / SPEED_MAX, 0, 1, 0), BackgroundColor3 = C.white, BorderSizePixel = 0,
+}, {
+	create("UICorner", { CornerRadius = UDim.new(1, 0) }),
+	create("UIGradient", { Color = ColorSequence.new(C.cyan, C.pink) }),
+})
+
+local function setSpeed(v)
+	speedVal = math.clamp(v, STEP, SPEED_MAX)
+	valLbl.Text = tostring(speedVal)
+	valLbl.TextColor3 = C.cyan:Lerp(C.pink, speedVal / SPEED_MAX)
+	tw(barFill, 0.1, { Size = UDim2.new(speedVal / SPEED_MAX, 0, 1, 0) })
+end
+
+local bSet = mkBtn(drawer, "SET 300", UDim2.fromOffset(172, 28), UDim2.fromOffset(14, 112), C.cyan, 13)
+
+-- arrow pad: hold an arrow to drive the car at the chosen speed
+mkLabel(drawer, "ARROWS  ▲ ▼ ◀ ▶", UDim2.new(1, 0, 0, 14), UDim2.new(0, 0, 0, 144), 11, Color3.fromRGB(150, 150, 190), Enum.Font.GothamBold)
+local function padBtn(text, x, y, key)
+	local b = mkBtn(drawer, text, UDim2.fromOffset(48, 38), UDim2.fromOffset(x, y), C.pink, 20)
+	local function isPress(i)
+		return i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch
+	end
+	b.InputBegan:Connect(function(i) if isPress(i) then pad[key] = true end end)
+	b.InputEnded:Connect(function(i) if isPress(i) then pad[key] = false end end)
+	b.MouseLeave:Connect(function() pad[key] = false end)
+	return b
+end
+padBtn("▲", 76, 160, "up")
+padBtn("◀", 22, 202, "left")
+padBtn("▼", 76, 202, "down")
+padBtn("▶", 130, 202, "right")
+
+local bSpeed = mkBtn(drawer, "SPEED: ON", UDim2.fromOffset(172, 32), UDim2.fromOffset(14, 246), C.green, 14)
+local bDir = mkBtn(drawer, "DIR ⇄  (عكس الاتجاه)", UDim2.fromOffset(172, 22), UDim2.fromOffset(14, 282), C.gray, 11)
+local status = mkLabel(drawer, "", UDim2.new(1, 0, 0, 16), UDim2.new(0, 0, 0, 307), 12, C.white, Enum.Font.GothamBold)
+
+local function holdRepeat(btn, fn)
+	local token = 0
+	btn.MouseButton1Down:Connect(function()
+		token += 1
+		local my = token
+		fn()
+		task.delay(0.4, function()
+			while token == my and running do fn() task.wait(0.07) end
+		end)
+	end)
+	local function stop() token += 1 end
+	btn.MouseButton1Up:Connect(stop)
+	btn.MouseLeave:Connect(stop)
+end
+holdRepeat(bUp, function() setSpeed(speedVal + STEP) end)
+holdRepeat(bDown, function() setSpeed(speedVal - STEP) end)
+bSet.MouseButton1Click:Connect(function() setSpeed(SPEED_DEF) end)
+
+local function toggleSpeed()
+	speedOn = not speedOn
+	bSpeed.Text = "SPEED: " .. (speedOn and "ON" or "OFF")
+	tw(bSpeed, 0.2, { BackgroundColor3 = speedOn and C.green or C.red })
+end
+bSpeed.MouseButton1Click:Connect(toggleSpeed)
+bDir.MouseButton1Click:Connect(function()
+	dirSign = -dirSign
+	bDir.Text = dirSign == 1 and "DIR ⇄  (عكس الاتجاه)" or "DIR ⇄  (معكوس)"
+end)
+setSpeed(speedVal)
+
+-- drawer handle (arrow tab)
+local drawerOpen = false
+local handle = mkBtn(gui, "◀", UDim2.fromOffset(32, 80), UDim2.new(1, 0, 0.5, 0), C.pink, 18)
+handle.AnchorPoint = Vector2.new(1, 0.5)
+local function setDrawer(open)
+	drawerOpen = open
+	handle.Text = open and "▶" or "◀"
+	tw(drawer, 0.3, { Position = open and UDim2.new(1, -(DW + 6), 0.5, 0) or UDim2.new(1, 6, 0.5, 0) })
+	tw(handle, 0.3, { Position = open and UDim2.new(1, -(DW + 6), 0.5, 0) or UDim2.new(1, 0, 0.5, 0) })
+end
+handle.MouseButton1Click:Connect(function() setDrawer(not drawerOpen) end)
+
+-- speed logic
+local function currentSeat()
+	local ch = player.Character
+	local hum = ch and ch:FindFirstChildOfClass("Humanoid")
+	return hum and hum.SeatPart
+end
+
+local braking = 0
+local speedC = RunService.Heartbeat:Connect(function(dt)
+	if not speedOn then return end
+	local seat = currentSeat()
+	if not seat then return end
+
+	-- arrows (keyboard or on-screen pad): forward / back / strafe right / strafe left
+	local fa, ra = 0, 0
+	if pad.up or UIS:IsKeyDown(Enum.KeyCode.Up) then fa += 1 end
+	if pad.down or UIS:IsKeyDown(Enum.KeyCode.Down) then fa -= 1 end
+	if pad.right or UIS:IsKeyDown(Enum.KeyCode.Right) then ra += 1 end
+	if pad.left or UIS:IsKeyDown(Enum.KeyCode.Left) then ra -= 1 end
+	local arrows = (fa ~= 0 or ra ~= 0)
+
+	-- normal throttle (W / S / stick) also gets the boosted speed
+	local throttle = 0
+	if seat:IsA("VehicleSeat") then
+		seat.MaxSpeed = speedVal
+		throttle = seat.ThrottleFloat
+	else
+		if UIS:IsKeyDown(Enum.KeyCode.W) then throttle += 1 end
+		if UIS:IsKeyDown(Enum.KeyCode.S) then throttle -= 1 end
+	end
+
+	local root = seat.AssemblyRootPart or seat
+	local cf = seat.CFrame
+	local look = cf.LookVector * dirSign
+	local right = cf.RightVector * dirSign
+	look = Vector3.new(look.X, 0, look.Z)
+	right = Vector3.new(right.X, 0, right.Z)
+	if look.Magnitude < 0.01 then return end
+	look = look.Unit
+	right = right.Magnitude > 0.01 and right.Unit or Vector3.zero
+
+	local move = look * math.clamp(fa + throttle, -1, 1) + right * ra
+	if move.Magnitude > 1 then move = move.Unit end
+
+	local v = root.AssemblyLinearVelocity
+	local hv = Vector3.new(v.X, 0, v.Z)
+	if move.Magnitude > 0.01 then
+		if arrows then braking = 0.4 end
+		local nv = hv:Lerp(move * speedVal, math.clamp(dt * 3, 0, 1))
+		root.AssemblyLinearVelocity = Vector3.new(nv.X, v.Y, nv.Z)
+	elseif braking > 0 then
+		-- arrows released: stop smoothly instead of sliding away
+		braking -= dt
+		local nv = hv:Lerp(Vector3.zero, math.clamp(dt * 8, 0, 1))
+		root.AssemblyLinearVelocity = Vector3.new(nv.X, v.Y, nv.Z)
+	end
+end)
+
+task.spawn(function()
+	while running do
+		if currentSeat() then
+			status.Text, status.TextColor3 = "🚗 داخل السيارة", C.green
+		else
+			status.Text, status.TextColor3 = "اركب سيارة أول", Color3.fromRGB(255, 190, 90)
+		end
+		task.wait(0.3)
+	end
+end)
+
+local keyC = UIS.InputBegan:Connect(function(i, gp)
+	if gp or UIS:GetFocusedTextBox() then return end
+	if i.KeyCode == Enum.KeyCode.H then toggleHB()
+	elseif i.KeyCode == Enum.KeyCode.M then setDrawer(not drawerOpen)
+	elseif i.KeyCode == Enum.KeyCode.N then toggleSpeed() end
+end)
+
+local function destroy()
+	running, enabled, speedOn = false, false, false
+	addC:Disconnect() remC:Disconnect() keyC:Disconnect() speedC:Disconnect() followC:Disconnect()
+	clearAll()
+	gui:Destroy()
+	if introGui then pcall(function() introGui:Destroy() end) end
+end
+if getgenv then getgenv().DhabHB2 = destroy end
